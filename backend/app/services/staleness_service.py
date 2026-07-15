@@ -133,24 +133,16 @@ class StalenessService:
     @staticmethod
     def _generate_diff_summary(old_text: str, new_text: str) -> str:
         """
-        Creates a brief textual summary of differences between old and new text.
+        Creates a unified diff summary of differences between old and new text.
         """
-        # Let's count character diffs and perform a line diff
-        old_lines = old_text.splitlines()
-        new_lines = new_text.splitlines()
+        diff = difflib.unified_diff(
+            old_text.splitlines(),
+            new_text.splitlines(),
+            lineterm=""
+        )
+        diff_text = "\n".join(diff)
         
-        diff = list(difflib.ndiff(old_lines, new_lines))
-        added = sum(1 for line in diff if line.startswith('+ '))
-        removed = sum(1 for line in diff if line.startswith('- '))
-        
-        summary_parts = []
-        if added:
-            summary_parts.append(f"added {added} line(s)")
-        if removed:
-            summary_parts.append(f"removed {removed} line(s)")
+        if not diff_text.strip():
+            return "Minor textual modifications detected, but lines remained identical."
             
-        if not summary_parts:
-            # Typo or single character edit
-            return f"Minor textual modifications (length: {len(old_text)} -> {len(new_text)} chars)."
-            
-        return f"Body modified: {', '.join(summary_parts)}."
+        return diff_text
