@@ -112,8 +112,9 @@ We evaluate test case staleness deterministically at retrieval time:
 2. Trace each source node to its current version counterpart via its `logical_id`.
 3. Compare the current `content_hash` against the snapshotted hash.
 
-### Staleness Classification
-The current implementation treats any content hash change as stale (a binary `Stale / Not Stale` classification). This is intentionally conservative because determining semantic equivalence automatically is unreliable for regulatory documents. A one-word wording change might completely alter a safety parameter, so we flag the change and output a line-by-line diff, empowering the human QA engineer to make the final determination.
+### Staleness Classification & Diffing
+The current implementation treats any content hash change as stale. Determining semantic equivalence automatically via an LLM is unreliable, adds latency, and is overly complex/expensive for regulatory documents where a one-word change might completely alter a safety parameter. 
+Instead, we use a fast, deterministic approach: when a hash change is detected, we immediately run Python's `difflib.unified_diff` to generate a standard, lightweight diff summary (e.g., `- 280 mmHg` `+ 300 mmHg`). This gives the QA engineer immediate, clear visibility into exactly what text was changed, empowering them to make the final determination on test case validity without over-engineering an AI semantic diff engine.
 
 ---
 
