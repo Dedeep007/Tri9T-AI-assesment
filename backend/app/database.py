@@ -2,10 +2,13 @@ import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 from dotenv import load_dotenv
+from pymongo import MongoClient
+import mongomock
 
 # Load environment variables
 load_dotenv()
 
+# --- SQLITE / POSTGRESQL (Relational) ---
 DATABASE_URL = os.getenv("SUPABASE_DB_URL")
 
 # If no SUPABASE_DB_URL is provided, fallback to local sqlite for testing convenience
@@ -27,3 +30,17 @@ def get_db():
         yield db
     finally:
         db.close()
+
+# --- MONGODB (NoSQL) ---
+MONGODB_URL = os.getenv("MONGODB_URL")
+
+# Use mongomock if no URL is provided, to ensure demo runs without setup
+if not MONGODB_URL:
+    mongo_client = mongomock.MongoClient()
+else:
+    mongo_client = MongoClient(MONGODB_URL)
+
+mongo_db = mongo_client["tri9t_db"]
+
+def get_mongo_db():
+    return mongo_db

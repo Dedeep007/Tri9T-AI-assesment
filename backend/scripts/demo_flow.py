@@ -1,5 +1,7 @@
 import os
 import sys
+import uuid
+from datetime import datetime
 
 # Add backend to python path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -7,7 +9,7 @@ sys.stdout.reconfigure(encoding='utf-8')
 
 from sqlalchemy.orm import Session
 from app.database import engine, Base, SessionLocal
-from app.models.sql_models import Document, DocumentVersion, Node, Selection, Generation
+from app.models.sql_models import Document, DocumentVersion, Node, Selection
 from app.services.ocr_pipeline import OCRPipeline
 from app.services.hierarchy_builder import HierarchyBuilder
 from app.services.version_matcher import VersionMatcher
@@ -20,7 +22,7 @@ def run_demo():
     print("============================================================\n")
 
     # Force SQLite local file db for the demo so we don't overwrite Supabase data
-    print("[1] Initializing SQLite local database for clean demo run...")
+    print("[1] Initializing SQLite local database and MongoDB (mongomock) for clean demo run...")
     db_file = "demo_runs.db"
     if os.path.exists(db_file):
         os.remove(db_file)
@@ -32,6 +34,10 @@ def run_demo():
     db_module.Base.metadata.create_all(bind=db_module.engine)
     
     db: Session = db_module.SessionLocal()
+    mongo_db = db_module.get_mongo_db()
+    generations_collection = mongo_db["generations"]
+    # Clear mongomock collection
+    generations_collection.delete_many({})
 
     # Resolve paths dynamically relative to this script
     script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -148,22 +154,23 @@ def run_demo():
     # Call LLM Service (mocked if no keys exist)
     gen_result = LLMService.generate_test_cases(reconstructed_text)
     
-    generation = Generation(
-        selection_id=selection.id,
-        status=gen_result["status"],
-        prompt_used=gen_result["prompt_used"],
-        raw_llm_response=gen_result["raw_llm_response"],
-        error=gen_result["error"],
-        test_cases=gen_result["test_cases"],
-        node_snapshots=node_snapshots
-    )
-    db.add(generation)
-    db.commit()
-    db.refresh(generation)
+    generation_doc = {
+        "id": str(uuid.uuid4()),
+        "selection_id": str(selection.id),
+        "created_at": datetime.utcnow().isoformat(),
+        "status": gen_result["status"],
+        "prompt_used": gen_result["prompt_used"],
+        "raw_llm_response": gen_result["raw_llm_response"],
+        "error": gen_result["error"],
+        "test_cases": gen_result["test_cases"],
+        "node_snapshots": node_snapshots
+    }
+    
+    generations_collection.insert_one(generation_doc.copy())
 
-    print(f"Generation complete. Status: {generation.status}")
-    print("Generated QA Test Cases:")
-    for idx, tc in enumerate(generation.test_cases):
+    print(f"Generation complete. Status: {generation_doc['status']}")
+    print("Generated QA Test Cases stored in MongoDB:")
+    for idx, tc in enumerate(generation_doc["test_cases"]):
         print(f"  Test Case {idx+1}: {tc['title']}")
         print(f"    Preconditions: {tc['preconditions']}")
         print(f"    Expected: {tc['expected_result']}")
@@ -220,7 +227,7 @@ def run_demo():
 
     # Step 6: Evaluate Staleness
     print("\n[7] Querying generated test cases and executing Staleness / Impact Detection against Version 2...")
-    staleness_report = StalenessService.evaluate_generation_staleness(db, generation)
+    staleness_report = StalenessService.evaluate_generation_staleness(db, generation_doc)
     
     print("\nStaleness Report:")
     for tc_report in staleness_report:

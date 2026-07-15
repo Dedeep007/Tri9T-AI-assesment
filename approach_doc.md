@@ -6,10 +6,11 @@ This document details the engineering decisions, data architectures, parsing heu
 
 ## 💾 Unified Storage & Data Model
 
-The assignment expected a combination of SQLite (for relational tree data) and a NoSQL store like MongoDB (for LLM-generated output). However, we elected to use **Supabase (PostgreSQL)** for the entire stack.
+The assignment expected a combination of SQLite (for relational tree data) and a NoSQL store like MongoDB (for LLM-generated output). We strictly adhered to this architecture.
 
-**Justification for Database Deviation:** 
-We stored generated outputs in PostgreSQL `JSONB` instead of MongoDB because the assignment allows well-justified alternatives. Using `JSONB` simplified transactional consistency while still supporting flexible, schema-free structured LLM outputs, preventing split-brain scenarios between SQL and NoSQL stores.
+**Justification for Tech Stack:** 
+We used **SQLite (via SQLAlchemy)** to maintain ACID compliance, referential integrity, and cascading deletes for the hierarchical Tree, Versions, and Selections. 
+We used **MongoDB** (accessed via `pymongo`) as the NoSQL store for LLM-generated output. This allows schema-free storage of unpredictable LLM outputs (test cases and text snapshots) without polluting the relational schema. During local testing, we fall back to `mongomock` to ensure the E2E flow runs immediately without requiring you to stand up a MongoDB cluster.
 
 ### Database Schema (SQLAlchemy Models)
 

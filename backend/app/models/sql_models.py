@@ -115,7 +115,6 @@ class Selection(Base):
 
     document = relationship("Document", back_populates="selections")
     items = relationship("SelectionItem", back_populates="selection", cascade="all, delete-orphan")
-    generations = relationship("Generation", back_populates="selection", cascade="all, delete-orphan")
 
 
 class SelectionItem(Base):
@@ -133,19 +132,4 @@ class SelectionItem(Base):
     version = relationship("DocumentVersion", back_populates="selection_items")
 
 
-class Generation(Base):
-    __tablename__ = "generations"
 
-    id = Column(GUID(), primary_key=True, default=uuid.uuid4)
-    selection_id = Column(GUID(), ForeignKey("selections.id", ondelete="CASCADE"), nullable=False)
-    created_at = Column(DateTime, default=datetime.datetime.utcnow)
-    status = Column(String(50), nullable=False)  # complete, partial, failed
-    prompt_used = Column(Text, nullable=True)
-    raw_llm_response = Column(Text, nullable=True)
-    error = Column(Text, nullable=True)
-    
-    # Store schema-free JSON fields
-    test_cases = Column(get_json_type(), nullable=True)
-    node_snapshots = Column(get_json_type(), nullable=True)
-
-    selection = relationship("Selection", back_populates="generations")

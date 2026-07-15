@@ -1,8 +1,10 @@
 import pytest
+import uuid
+from datetime import datetime
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from app.database import Base
-from app.models.sql_models import Document, DocumentVersion, Node, NodeMapping, Selection, SelectionItem, Generation
+from app.models.sql_models import Document, DocumentVersion, Node, NodeMapping, Selection, SelectionItem
 from app.services.hierarchy_builder import HierarchyBuilder
 from app.services.version_matcher import VersionMatcher
 from app.services.staleness_service import StalenessService
@@ -186,17 +188,19 @@ def test_staleness_detection(db):
     db.add(sel_item)
     db.flush()
 
-    # Save Generation record linking to the snapshot
-    gen = Generation(
-        selection_id=selection.id,
-        status="complete",
-        test_cases=[{
+    # Save Generation dict mimicking MongoDB record
+    gen_doc = {
+        "id": str(uuid.uuid4()),
+        "selection_id": selection.id,
+        "created_at": datetime.utcnow().isoformat(),
+        "status": "complete",
+        "test_cases": [{
             "title": "Verify inflation pressure",
             "steps": ["Step 1"],
             "expected_result": "Inflates to 180 mmHg",
             "requirement_ref": "2.1"
         }],
-        node_snapshots={
+        "node_snapshots": {
             str(node_v1.id): {
                 "logical_id": node_v1.logical_id,
                 "heading": node_v1.heading,
@@ -205,9 +209,7 @@ def test_staleness_detection(db):
                 "text": node_v1.body_text
             }
         }
-    )
-    db.add(gen)
-    db.flush()
+    }
 
     # 2. Ingest V2 (where text of section 2.1 changes)
     v2 = DocumentVersion(document_id=doc.id, version_number=2, source_filename="v2.pdf")
@@ -228,7 +230,7 @@ def test_staleness_detection(db):
     db.commit()
 
     # 3. Evaluate Staleness
-    report = StalenessService.evaluate_generation_staleness(db, gen)
+    report = StalenessService.evaluate_generation_staleness(db, gen_doc)
     assert len(report) == 1
     assert report[0]["stale"] is True
     assert report[0]["staleness_detail"][0]["status"] == "changed"

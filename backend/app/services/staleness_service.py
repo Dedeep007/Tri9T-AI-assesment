@@ -1,24 +1,28 @@
 import difflib
 from typing import List, Dict, Any, Optional
 from sqlalchemy.orm import Session
-from app.models.sql_models import Generation, Selection, DocumentVersion, Node
+from app.models.sql_models import Selection, DocumentVersion, Node
 from app.models.pydantic_schemas import TestCaseStalenessResponse, NodeStalenessDetail
 
 class StalenessService:
     @staticmethod
-    def evaluate_generation_staleness(db: Session, gen: Generation) -> List[Dict[str, Any]]:
+    def evaluate_generation_staleness(db: Session, gen: Dict[str, Any]) -> List[Dict[str, Any]]:
         """
         Evaluates the staleness of all test cases in a generation against the latest version of the document.
         
         Args:
-            db: Database session
-            gen: The Generation record
+            db: Database session (SQLite)
+            gen: The Generation record (from MongoDB)
             
         Returns:
             List of TestCaseStalenessResponse representations.
         """
         # Get selection and document
-        selection = gen.selection
+        selection_id = gen.get("selection_id")
+        selection = db.query(Selection).filter(Selection.id == selection_id).first()
+        if not selection:
+            return []
+            
         doc_id = selection.document_id
         
         # Get latest version of the document
@@ -35,15 +39,15 @@ class StalenessService:
         latest_nodes = db.query(Node).filter(Node.version_id == latest_version.id).all()
         latest_nodes_by_logical = {n.logical_id: n for n in latest_nodes}
 
-        # Snapshot of nodes at generation time (from the JSON column)
-        snapshots = gen.node_snapshots or {}
+        # Snapshot of nodes at generation time (from the JSON column/Mongo field)
+        snapshots = gen.get("node_snapshots", {})
 
         # Evaluate each test case
         results = []
-        test_cases = gen.test_cases or []
+        test_cases = gen.get("test_cases", [])
         
         for idx, tc in enumerate(test_cases):
-            tc_id = f"{gen.id}_tc_{idx}"
+            tc_id = f"{gen.get('id')}_tc_{idx}"
             tc_title = tc.get("title", "Unnamed Test Case")
             
             # The test case references source nodes
