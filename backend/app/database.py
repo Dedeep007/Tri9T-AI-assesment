@@ -3,7 +3,6 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 from dotenv import load_dotenv
 from pymongo import MongoClient
-import mongomock
 
 # Load environment variables
 load_dotenv()
@@ -34,12 +33,11 @@ def get_db():
 # --- MONGODB (NoSQL) ---
 MONGODB_URL = os.getenv("MONGODB_URL")
 
-# Use mongomock if no URL is provided, to ensure demo runs without setup
+# Enforce real MongoDB connection
 if not MONGODB_URL:
-    mongo_client = mongomock.MongoClient()
-else:
-    mongo_client = MongoClient(MONGODB_URL)
-
+    raise ValueError("MONGODB_URL environment variable is not set. Please provide a valid MongoDB connection string in .env.")
+    
+mongo_client = MongoClient(MONGODB_URL)
 mongo_db = mongo_client["tri9t_db"]
 
 def get_mongo_db():

@@ -22,7 +22,7 @@ def run_demo():
     print("============================================================\n")
 
     # Force SQLite local file db for the demo so we don't overwrite Supabase data
-    print("[1] Initializing SQLite local database and MongoDB (mongomock) for clean demo run...")
+    print("[1] Initializing SQLite local database and MongoDB for clean demo run...")
     db_file = "demo_runs.db"
     if os.path.exists(db_file):
         os.remove(db_file)
