@@ -2,15 +2,15 @@
 
 This is a FastAPI backend application designed to support medical device software compliance and Quality Assurance (QA). It parses the CardioTrack CT-200 technical manual PDF, recovers its hierarchical section tree structure, maps content versions logically, generates QA test-case ideas using an LLM, and evaluates requirements traceability staleness when a new document version is uploaded.
 
-The backend uses **Supabase (PostgreSQL)** for unified, dialect-agnostic storage of document sections, versions, selections, and LLM-generated test cases (utilizing PostgreSQL `JSONB` columns).
+The backend uses **SQLite (via SQLAlchemy)** for relational storage of document trees and versions, and **MongoDB** for schema-free NoSQL storage of LLM-generated QA test cases and staleness snapshots.
 
 ---
 
 ## 🛠️ Technology Stack
 
 - **Core**: FastAPI (Python 3.10+)
-- **ORM & DB**: SQLAlchemy + Supabase (PostgreSQL) / Fallback SQLite
-- **OCR & Document Extraction**: `pdfplumber` (native text extraction & font metadata recovery) + `pytesseract` (fallback for scanned pages)
+- **Relational DB**: SQLAlchemy + SQLite
+- **NoSQL DB**: MongoDB (local or Atlas) for LLM generations
 - **LLM Integration**: Groq API (`llama-3.3-70b-versatile`) or Gemini API (`gemini-1.5-flash`)
 - **Testing**: Pytest
 
@@ -37,9 +37,8 @@ cp .env.example .env
 ```
 Open `.env` and fill in your Supabase database and LLM API keys:
 ```env
-# Supabase PostgreSQL database URL (Direct connection string)
-# If left blank, the app will fall back automatically to a local SQLite file (demo_runs.db)
-SUPABASE_DB_URL=postgresql://postgres:YOUR_PASSWORD@db.YOUR_PROJECT_REF.supabase.co:5432/postgres
+# MongoDB Connection String
+MONGODB_URL=mongodb+srv://<username>:<password>@cluster0.mongodb.net/?retryWrites=true&w=majority
 
 # API keys for LLM Generation (Groq is preferred; Gemini is also supported)
 # If both are left blank, the system runs in an offline mock generator mode for safety
