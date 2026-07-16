@@ -7,7 +7,7 @@ from app.database import get_db
 from app.models.sql_models import Document, DocumentVersion, Node, NodeMapping
 from app.models.pydantic_schemas import (
     DocumentResponse, DocumentVersionResponse, NodeResponse, 
-    NodeDetailResponse, NodeDiffDetail
+    NodeDetailResponse, NodeDiffDetail, DocumentCompareResponse, ValidationResponse
 )
 
 router = APIRouter()
@@ -217,4 +217,81 @@ def diff_node(
         v1_body=node_v1.body_text,
         v2_body=node_v2.body_text,
         diff_summary=diff_summary
+    )
+
+@router.get("/documents/{doc_id}/compare", response_model=DocumentCompareResponse)
+def compare_document_versions(
+    doc_id: str,
+    v1: int = Query(..., description="First version number"),
+    v2: int = Query(..., description="Second version number"),
+    db: Session = Depends(get_db)
+):
+    v1_rec = db.query(DocumentVersion).filter(DocumentVersion.document_id == doc_id, DocumentVersion.version_number == v1).first()
+    v2_rec = db.query(DocumentVersion).filter(DocumentVersion.document_id == doc_id, DocumentVersion.version_number == v2).first()
+    
+    if not v1_rec or not v2_rec:
+        raise HTTPException(status_code=404, detail="One or both versions not found")
+        
+    v1_nodes = db.query(Node).filter(Node.version_id == v1_rec.id).all()
+    v2_nodes = db.query(Node).filter(Node.version_id == v2_rec.id).all()
+    
+    v1_map = {n.logical_id: n for n in v1_nodes}
+    v2_map = {n.logical_id: n for n in v2_nodes}
+    
+    added = 0
+    removed = 0
+    modified = 0
+    unchanged = 0
+    
+    for logical_id, node_v2 in v2_map.items():
+        if logical_id not in v1_map:
+            added += 1
+        else:
+            node_v1 = v1_map[logical_id]
+            if node_v1.content_hash == node_v2.content_hash:
+                unchanged += 1
+            else:
+                modified += 1
+                
+    for logical_id in v1_map:
+        if logical_id not in v2_map:
+            removed += 1
+            
+    return DocumentCompareResponse(
+        added=added,
+        removed=removed,
+        modified=modified,
+        unchanged=unchanged
+    )
+
+@router.get("/documents/{doc_id}/versions/{version_num}/validate", response_model=ValidationResponse)
+def validate_document_version(
+    doc_id: str,
+    version_num: int,
+    db: Session = Depends(get_db)
+):
+    ver = db.query(DocumentVersion).filter(DocumentVersion.document_id == doc_id, DocumentVersion.version_number == version_num).first()
+    if not ver:
+        raise HTTPException(status_code=404, detail="Version not found")
+        
+    nodes = db.query(Node).filter(Node.version_id == ver.id).all()
+    node_map = {n.id: n for n in nodes}
+    
+    issues = []
+    
+    for node in nodes:
+        if node.level > 0:
+            if not node.parent_id:
+                issues.append(f"Node '{node.heading}' (Level {node.level}) has no parent.")
+            else:
+                parent = node_map.get(node.parent_id)
+                if not parent:
+                    issues.append(f"Node '{node.heading}' has an invalid parent_id.")
+                else:
+                    if node.level > parent.level + 1:
+                        issues.append(f"Skipped heading level from {parent.level} -> {node.level} on Node '{node.heading}'.")
+    
+    return ValidationResponse(
+        valid=len(issues) == 0,
+        issues=issues
     )

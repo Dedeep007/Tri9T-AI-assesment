@@ -25,15 +25,22 @@ def generate_qa_test_cases(
     generations_collection = mongo_db["generations"]
         
     # Idempotency check: return existing successful generation from MongoDB if force=False
-    if not force:
-        existing_gen = generations_collection.find_one(
-            {"selection_id": sel_id, "status": "complete"},
-            sort=[("created_at", -1)]
-        )
-        if existing_gen:
-            print("Returning cached LLM generation from MongoDB.")
-            # Convert _id to string or just pass directly if Pydantic ignores it
-            return GenerationResponse(**existing_gen)
+    if not force and selection.selection_hash:
+        # Find any other selection with the identical hash
+        identical_selections = db.query(Selection.id).filter(Selection.selection_hash == selection.selection_hash).all()
+        identical_sel_ids = [str(s.id) for s in identical_selections]
+        
+        if identical_sel_ids:
+            existing_gen = generations_collection.find_one(
+                {"selection_id": {"$in": identical_sel_ids}, "status": "complete"},
+                sort=[("created_at", -1)]
+            )
+            if existing_gen:
+                print("Returning cached LLM generation from MongoDB based on identical selection fingerprint.")
+                # We should update the returned generation's selection_id to match the requested one
+                # so the client doesn't get confused by a different selection_id
+                existing_gen["selection_id"] = sel_id
+                return GenerationResponse(**existing_gen)
 
     # 1. Reconstruct selected text for LLM prompt
     items = selection.items

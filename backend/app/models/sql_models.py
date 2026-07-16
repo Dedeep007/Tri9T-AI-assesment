@@ -111,6 +111,7 @@ class Selection(Base):
     id = Column(GUID(), primary_key=True, default=uuid.uuid4)
     document_id = Column(GUID(), ForeignKey("documents.id", ondelete="CASCADE"), nullable=False)
     name = Column(String(255), nullable=False)
+    selection_hash = Column(String(64), nullable=True) # SHA-256 fingerprint
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
     document = relationship("Document", back_populates="selections")

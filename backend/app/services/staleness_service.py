@@ -1,4 +1,5 @@
 import difflib
+import re
 from typing import List, Dict, Any, Optional, Tuple
 from sqlalchemy.orm import Session
 from app.models.sql_models import Selection, SelectionItem, DocumentVersion, Node
@@ -66,6 +67,13 @@ class StalenessService:
             staleness_details = []
             is_stale = False
             overall_status = "valid"
+            tc_severity = "LOW"
+            
+            def update_severity(current: str, new_val: str) -> str:
+                levels = {"LOW": 1, "MEDIUM": 2, "HIGH": 3}
+                if levels.get(new_val, 1) > levels.get(current, 1):
+                    return new_val
+                return current
 
             # In the prompt, the LLM associates test cases with headings or paths.
             # To be robust, we look at all nodes that were in the original selection!
@@ -89,6 +97,7 @@ class StalenessService:
                     # Node was deleted in latest version!
                     is_stale = True
                     overall_status = "stale"
+                    tc_severity = update_severity(tc_severity, "MEDIUM")
                     staleness_details.append({
                         "node_id": node_id_str,
                         "heading": heading,
@@ -99,7 +108,8 @@ class StalenessService:
                         "diff_summary": "Section was deleted from the document manual.",
                         "changes": None,
                         "generated_from_version": gen_version_number,
-                        "current_version": current_version_number
+                        "current_version": current_version_number,
+                        "severity": "MEDIUM"
                     })
                 else:
                     curr_node = latest_nodes_by_logical[logical_id]
@@ -111,7 +121,9 @@ class StalenessService:
                         # Generate diff summary
                         old_text = snap.get("text", "")
                         new_text = curr_node.body_text
-                        diff_sum, changes = StalenessService._generate_structured_diff(old_text, new_text)
+                        diff_sum, changes, node_sev = StalenessService._generate_structured_diff(old_text, new_text)
+                        
+                        tc_severity = update_severity(tc_severity, node_sev)
                         
                         staleness_details.append({
                             "node_id": node_id_str,
@@ -123,7 +135,8 @@ class StalenessService:
                             "diff_summary": diff_sum,
                             "changes": changes,
                             "generated_from_version": gen_version_number,
-                            "current_version": current_version_number
+                            "current_version": current_version_number,
+                            "severity": node_sev
                         })
                     else:
                         staleness_details.append({
@@ -144,15 +157,16 @@ class StalenessService:
                 "title": tc_title,
                 "stale": is_stale,
                 "status": overall_status,
+                "severity": tc_severity if is_stale else None,
                 "staleness_detail": staleness_details
             })
             
         return results
 
     @staticmethod
-    def _generate_structured_diff(old_text: str, new_text: str) -> Tuple[str, List[Dict[str, str]]]:
+    def _generate_structured_diff(old_text: str, new_text: str) -> Tuple[str, List[Dict[str, str]], str]:
         """
-        Creates a unified diff summary and a structured list of changes.
+        Creates a unified diff summary, a structured list of changes, and calculates severity.
         """
         diff = difflib.unified_diff(
             old_text.splitlines(),
@@ -188,4 +202,16 @@ class StalenessService:
                 changes.append({"type": "added", "new": line[2:]})
             i += 1
             
-        return diff_text, changes
+        node_severity = "LOW"
+        for change in changes:
+            if change["type"] in ["added", "deleted"]:
+                node_severity = "MEDIUM" if node_severity == "LOW" else node_severity
+            elif change["type"] == "modified":
+                old_nums = re.findall(r'\d+', change.get("old", ""))
+                new_nums = re.findall(r'\d+', change.get("new", ""))
+                if old_nums != new_nums:
+                    node_severity = "HIGH"
+                else:
+                    node_severity = "MEDIUM" if node_severity == "LOW" else node_severity
+                    
+        return diff_text, changes, node_severity

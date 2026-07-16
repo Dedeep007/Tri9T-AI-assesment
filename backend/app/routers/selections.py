@@ -1,3 +1,4 @@
+import hashlib
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
@@ -9,10 +10,16 @@ router = APIRouter()
 
 @router.post("/selections", response_model=SelectionResponse)
 def create_selection(payload: SelectionCreate, db: Session = Depends(get_db)):
+    # Generate selection hash based on sorted node ids
+    sorted_node_ids = sorted([str(nid) for nid in payload.node_ids])
+    hash_input = "".join(sorted_node_ids).encode('utf-8')
+    selection_hash = hashlib.sha256(hash_input).hexdigest()
+    
     # 1. Create Selection record
     selection = Selection(
         document_id=payload.document_id,
-        name=payload.name
+        name=payload.name,
+        selection_hash=selection_hash
     )
     db.add(selection)
     db.flush() # Populate selection.id

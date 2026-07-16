@@ -122,12 +122,14 @@ class NodeStalenessDetail(BaseModel):
     changes: Optional[List[DiffChange]] = None
     generated_from_version: Optional[int] = None
     current_version: Optional[int] = None
+    severity: Optional[str] = None
 
 class TestCaseStalenessResponse(BaseModel):
     test_case_id: str
     title: str
     stale: bool
     status: str # "valid", "stale", "unknown"
+    severity: Optional[str] = None
     staleness_detail: List[NodeStalenessDetail]
 
 # Diff Schemas
@@ -139,3 +141,13 @@ class NodeDiffDetail(BaseModel):
     v1_body: Optional[str] = None
     v2_body: Optional[str] = None
     diff_summary: Optional[str] = None
+
+class DocumentCompareResponse(BaseModel):
+    added: int
+    removed: int
+    modified: int
+    unchanged: int
+
+class ValidationResponse(BaseModel):
+    valid: bool
+    issues: List[str]
