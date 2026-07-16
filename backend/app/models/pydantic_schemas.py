@@ -106,6 +106,11 @@ class GenerationResponse(BaseModel):
         from_attributes = True
 
 # Staleness / Impact Schemas
+class DiffChange(BaseModel):
+    type: str  # "added", "deleted", "modified"
+    old: Optional[str] = None
+    new: Optional[str] = None
+
 class NodeStalenessDetail(BaseModel):
     node_id: UUID
     heading: str
@@ -114,6 +119,9 @@ class NodeStalenessDetail(BaseModel):
     hash_at_generation: str
     hash_current: Optional[str] = None
     diff_summary: Optional[str] = None
+    changes: Optional[List[DiffChange]] = None
+    generated_from_version: Optional[int] = None
+    current_version: Optional[int] = None
 
 class TestCaseStalenessResponse(BaseModel):
     test_case_id: str

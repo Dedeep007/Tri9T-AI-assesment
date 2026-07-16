@@ -1,7 +1,7 @@
 import difflib
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 from sqlalchemy.orm import Session
-from app.models.sql_models import Selection, DocumentVersion, Node
+from app.models.sql_models import Selection, SelectionItem, DocumentVersion, Node
 from app.models.pydantic_schemas import TestCaseStalenessResponse, NodeStalenessDetail
 
 class StalenessService:
@@ -25,11 +25,21 @@ class StalenessService:
             
         doc_id = selection.document_id
         
+        # Get generated version
+        selection_item = db.query(SelectionItem).filter(SelectionItem.selection_id == selection_id).first()
+        gen_version_number = None
+        if selection_item:
+            gen_version = db.query(DocumentVersion).filter(DocumentVersion.id == selection_item.version_id).first()
+            if gen_version:
+                gen_version_number = gen_version.version_number
+        
         # Get latest version of the document
         latest_version = db.query(DocumentVersion)\
             .filter(DocumentVersion.document_id == doc_id)\
             .order_by(DocumentVersion.version_number.desc())\
             .first()
+            
+        current_version_number = latest_version.version_number if latest_version else None
             
         if not latest_version:
             # No version found, default to not-stale
@@ -86,7 +96,10 @@ class StalenessService:
                         "status": "deleted",
                         "hash_at_generation": hash_at_generation,
                         "hash_current": None,
-                        "diff_summary": "Section was deleted from the document manual."
+                        "diff_summary": "Section was deleted from the document manual.",
+                        "changes": None,
+                        "generated_from_version": gen_version_number,
+                        "current_version": current_version_number
                     })
                 else:
                     curr_node = latest_nodes_by_logical[logical_id]
@@ -98,7 +111,7 @@ class StalenessService:
                         # Generate diff summary
                         old_text = snap.get("text", "")
                         new_text = curr_node.body_text
-                        diff_sum = StalenessService._generate_diff_summary(old_text, new_text)
+                        diff_sum, changes = StalenessService._generate_structured_diff(old_text, new_text)
                         
                         staleness_details.append({
                             "node_id": node_id_str,
@@ -107,7 +120,10 @@ class StalenessService:
                             "status": "changed",
                             "hash_at_generation": hash_at_generation,
                             "hash_current": curr_node.content_hash,
-                            "diff_summary": diff_sum
+                            "diff_summary": diff_sum,
+                            "changes": changes,
+                            "generated_from_version": gen_version_number,
+                            "current_version": current_version_number
                         })
                     else:
                         staleness_details.append({
@@ -117,7 +133,10 @@ class StalenessService:
                             "status": "unchanged",
                             "hash_at_generation": hash_at_generation,
                             "hash_current": curr_node.content_hash,
-                            "diff_summary": "No changes detected."
+                            "diff_summary": "No changes detected.",
+                            "changes": None,
+                            "generated_from_version": gen_version_number,
+                            "current_version": current_version_number
                         })
             
             results.append({
@@ -131,9 +150,9 @@ class StalenessService:
         return results
 
     @staticmethod
-    def _generate_diff_summary(old_text: str, new_text: str) -> str:
+    def _generate_structured_diff(old_text: str, new_text: str) -> Tuple[str, List[Dict[str, str]]]:
         """
-        Creates a unified diff summary of differences between old and new text.
+        Creates a unified diff summary and a structured list of changes.
         """
         diff = difflib.unified_diff(
             old_text.splitlines(),
@@ -143,6 +162,30 @@ class StalenessService:
         diff_text = "\n".join(diff)
         
         if not diff_text.strip():
-            return "Minor textual modifications detected, but lines remained identical."
+            diff_text = "Minor textual modifications detected, but lines remained identical."
             
-        return diff_text
+        ndiff = list(difflib.ndiff(old_text.splitlines(), new_text.splitlines()))
+        changes = []
+        i = 0
+        while i < len(ndiff):
+            line = ndiff[i]
+            if line.startswith('- '):
+                old_line = line[2:]
+                
+                if i + 1 < len(ndiff) and ndiff[i+1].startswith('? '):
+                    i += 1
+                    
+                if i + 1 < len(ndiff) and ndiff[i+1].startswith('+ '):
+                    new_line = ndiff[i+1][2:]
+                    i += 1
+                    if i + 1 < len(ndiff) and ndiff[i+1].startswith('? '):
+                        i += 1
+                    changes.append({"type": "modified", "old": old_line, "new": new_line})
+                else:
+                    changes.append({"type": "deleted", "old": old_line})
+                    
+            elif line.startswith('+ '):
+                changes.append({"type": "added", "new": line[2:]})
+            i += 1
+            
+        return diff_text, changes
